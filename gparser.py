@@ -6,11 +6,6 @@ import re
 class Parser():
     '''Abstract fetcher for Gaussian's files parameter value
 
-    Attrs
-    _file: File object
-    _matrix_unpacker: Unpacks the atom coordinates into a list
-
-
     Comments:
 
     1- Should implement subclasses for different kinds of parsers for different
@@ -19,16 +14,20 @@ class Parser():
     2- I can set a section 'class' to handle different sections for the input/
     output docs. class Parser could call Section's getter functions to retrieve
     valuable data
+
+    3- Substitute for range() with for xrange() where needed
     '''
 
     def __init__(self, p):
         self._file = deque(open(path.abspath(p), 'r'))
-        self._sections = self._get_sections
 
-    def _get_calctype(self, delim, start=0):
+    def parse_calctype(self, delim, start=0):
+
         calctype = None
-        p_delim, p_calctype = (re.compile(delim),
-                           re.compile(r'(?P<calc_type>\b([\w-])+\b)')
+        p_delim, p_calctype = (
+                               re.compile(delim),
+                               re.compile(r'(?P<calc_type>\b([\w-])+\b)')
+                              )
 
         for i, line in enumerate(self._file[start:]):
             m_delim = p_delim.match(line)
@@ -42,57 +41,48 @@ class Parser():
 
         return calctype
 
-    def _get_name(self, delim, start=0):
+    def parse_name(self, titlecard):
         '''
         TODO: This function is unable to return file name if it exceeds one line
+        If it were the case the titlecard should be given as a list of the lines
+        of the titlecard.
         '''
 
-        name = None
-        p_delim, p_name = (re.compile(delim),
-                           re.compile(r'''
-                                      (?:\b([\w-])+\b)
-                                      [ ]
-                                      (?P<name> .+)
-                                      ''', re.X))
+        p_name = re.compile(r'''
+                            (?:\b([\w-])+\b)
+                            [ ]
+                            (?P<name> .+)
+                            ''', re.X)
 
-        for i, line in enumerate(self._file[start:]):
-            m_delim = p_delim.match(line)
+        m_name = p_name.match(titlecard)
 
-            if m_delim:
-                m_name = p_name.match(self._file[start+i+1])
-                name = m_name.group('name')
-                return name
-            else:
-                continue
+        return m_name.group('name')
 
-        return name
-
-
-    def _get_z_matrix(self, udelim, ldelim):
+    def parse_init_matrix(self, zmatrix):
         '''
         This method could be used to search and retrieve any z-matrix, including
         intermediate steps in an optimization. If such function were desirable,
         the delim concept would need to be changed to something else...
         '''
 
-        p_udelim, p_ldelim, p_coords = (re.compile(udelim),
-                                        re.compile(ldelim),
-                                        re.compile(r'''
-                                                       [ ]?
-                                                       (?P<elem> [a-zA-Z])
-                                                       [ ]+
-                                                       (?P<x> -?[0-9]+[.][0-9]+\b)
-                                                       [ ]+
-                                                       (?P<y> -?[0-9]+[.][0-9]+\b)
-                                                       [ ]+
-                                                       (?P<z> -?[0-9]+[.][0-9]+\b)
-                                                       ''', re.X)
-                                        )
-        m = p.match(line)
+        index = 0
+        p_coords = re.compile(r'''[ ]?
+                              (?P<elem> [a-zA-Z])
+                              [ ]+
+                              (?P<x> -?[0-9]+[.][0-9]+\b)
+                              [ ]+
+                              (?P<y> -?[0-9]+[.][0-9]+\b)
+                              [ ]+
+                              (?P<z> -?[0-9]+[.][0-9]+\b)
+                              ''', re.X)
 
-        if m:
-            coord_dict = m.groupdict()
-            coord_dict['index'] = index
+        for line in zmatrix:
+            index += 1
+            m_coords = p_coords.match(line)
+
+            if m_coords:
+                coord_dict = m_coords.groupdict()
+                coord_dict['index'] = index
 
         return coord_dict
 
@@ -102,158 +92,37 @@ class Parser():
     def _get_multiplicity(self):
         pass
 
-
-
-    def _matrix_unpacker(self, coord, index):
-        # TODO Decide if this feature is needed
-        # Useful only for Parser's subclasses internal methods; should this be
-        # implemented some other way?
-        pass
-
-        p = re.compile(r'''
-                       [ ]?
-                       (?P<elem> [a-zA-Z])
-                       [ ]+
-                       (?P<x> -?[0-9]+[.][0-9]+\b)
-                       [ ]+
-                       (?P<y> -?[0-9]+[.][0-9]+\b)
-                       [ ]+
-                       (?P<z> -?[0-9]+[.][0-9]+\b)
-                       ''', re.X)
-
-        m = p.match(line)
-
-        if m:
-            coord_dict = m.groupdict()
-            coord_dict['index'] = index
-
-        return coord_dict
-
-
 class I_Parser(Parser):
-    '''I_GFiles' fetcher of parameter values
+    '''I_GFiles' fetcher of parameter values'''
 
-    _name: File's Title Card
-    _z_matrix: File's Z-matrix
-    _calctype: Calculation Type
-    '''
-
-    def __init__(self, p, calc):
-        super().__init__(p)
-
-
-    @property
-    def _name(self):
-        p1, p2, p3 = (re.compile('^ *$'),
-             re.compile('.+'),
-             re.compile('^ *$'))
-
-        # Isn't there a more pythonic way to do this?
+    def parse_name(self):
+        delim = '\n'
 
         for i in range(len(self._file) - 2):
-            m1, m2, m3 = (p1.match(self._file[i]),
-                         p2.match(self._file[i+1]),
-                         p3.match(self._file[i+2]))
+            if (
+                self._file[i] == delim and
+                not self._file[i+1] == '\n' and
+                self._file[i+2] == delim
+                ):
 
-            if m1 is None:
-                continue
-            elif m2 and m3:
-                return self._file[i+1]
-        else:
-            return None
+                return super().parse_name(self._file[i+1])
 
-    @_name.setter
-    def _name(self, value):
-        raise AttributeError('Property is Read-Only')
+        return None
 
-    @_name.deleter
-    def _name(self): #
-         # Causes RecursionError
-         # TODO Learn how to implement deleter
-         # self._name
-         pass
+    def parse_init_matrix(self):
+        matrix_list = []
+        p_elec_state = re.compile(r'[0-9] [0-9]')
 
-    @property
-    def _z_matrix(self):
-        p = re.compile(r'[0-9] [0-9]')
-
-        for i, l in enumerate(self._file):
-            m = p.match(l)
+        for i in range(len(self._file) - 2):
+            m = p_elec_state.match(self._file[i+1])
 
             if m:
-                for k, l in self._file[i+1:]:
-                    self._z_matrix()
-
-    @_z_matrix.setter
-    def _z_matrix(self, value):
-        raise AttributeError('Property is Read-Only')
-
-    @_z_matrix.deleter
-    def _z_matrix(self):
-        # TODO implement deleter
-        pass
+                if self._file[i] == '\n' and not self._file[i+2] == '\n':
+                    pass
+                else:
+                    continue
 
 class O_Parser(Parser):
-    '''O_GFiles' fetcher of parameter values
+    '''O_GFiles' fetcher of parameter values'''
 
-    _name: File's Title Card
-    _z_matrix: File's Z-matrix
-    _calctype: Calculation Type
-    '''
-
-    def __init__(self, p, calc):
-        super().__init__(p)
-
-
-    @property
-    def _name(self):
-        p1, p2, p3 = (re.compile('^ *$'),
-             re.compile('.+'),
-             re.compile('^ *$'))
-
-        # Isn't there a more pythonic way to do this?
-
-        for i in range(len(self._file) - 2):
-            m1, m2, m3 = (p1.match(self._file[i]),
-                         p2.match(self._file[i+1]),
-                         p3.match(self._file[i+2]))
-
-            if m1 is None:
-                continue
-            elif m2 and m3:
-                return self._file[i+1]
-        else:
-            return None
-
-    @_name.setter
-    def _name(self, value):
-        raise AttributeError('Property is Read-Only')
-
-    @_name.deleter
-    def _name(self): #
-         # Causes RecursionError
-         # TODO Learn how to implement deleter
-         # self._name
-         pass
-
-    @property
-    def _z_matrix(self):
-        p = re.compile(r'[0-9] [0-9]')
-
-        for i, line in enumerate(self._file):
-            m = p.match(line)
-
-            if m:
-
-
-
-        return coords
-
-    @_z_matrix.setter
-    def _z_matrix(self, value):
-        raise AttributeError('Property is Read-Only')
-
-    @_z_matrix.deleter
-    def _z_matrix(self):
-        # TODO implement deleter
-        pass
+    pass
